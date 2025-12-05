@@ -1,0 +1,13 @@
+google-adk>=1.2.1
+a2a-sdk>=0.2.5
+nest-asyncio>=1.6.0
+python-dotenv
+click
+uvicorn
+google-generativeai
+httpx
+crewai[tools]>=0.126.0
+pydantic
+uvicorn
+google-generativeai
+neo4j
