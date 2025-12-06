@@ -92,7 +92,7 @@ class HostAgent:
             model="gemini-2.0-flash",
             name="Host_Agent",
             instruction=self.root_instruction,
-            description="This Host agent orchestrates differnt agents",
+            description="This Host agent orchestrates scheduling badminton with friends.",
             tools=[
                 self.send_message,
                 confirm_movie_plan,
@@ -204,7 +204,7 @@ class HostAgent:
                 }
 
     async def send_message(self, agent_name: str, task: str, tool_context: ToolContext):
-        """Sends a task to a remote agent (Movie Agent or Sushmita Agent)."""
+        """Sends a task to a remote friend agent."""
         if agent_name not in self.remote_agent_connections:
             raise ValueError(f"Agent {agent_name} not found")
         client = self.remote_agent_connections[agent_name]
@@ -212,7 +212,7 @@ class HostAgent:
         if not client:
             raise ValueError(f"Client not available for {agent_name}")
 
-       # Simplified task and context ID management
+        # Simplified task and context ID management
         state = tool_context.state
         task_id = state.get("task_id", str(uuid.uuid4()))
         context_id = state.get("context_id", str(uuid.uuid4()))
@@ -239,7 +239,7 @@ class HostAgent:
         ) or not isinstance(send_response.root.result, Task):
             print("Received a non-success or non-task response. Cannot proceed.")
             return
-            
+
         response_content = send_response.root.model_dump_json(exclude_none=True)
         json_content = json.loads(response_content)
 
@@ -255,15 +255,15 @@ def _get_initialized_host_agent_sync():
     """Synchronously creates and initializes the HostAgent."""
 
     async def _async_main():
-        # Hardcoded URLs for the movie recommendation agents
-        remote_agent_urls = [
-            "http://localhost:10002",  # Movie Agent - provides movie recommendations from Neo4j
-            "http://localhost:10006",  # Sushmita Agent - provides availability and movie preferences
+        # Hardcoded URLs for the friend agents
+        friend_agent_urls = [
+            "http://localhost:10005",  # Movie's Agent
+            "http://localhost:10006",  # Sushmita's Agent
         ]
 
         print("initializing host agent")
         hosting_agent_instance = await HostAgent.create(
-            remote_agent_addresses=remote_agent_urls
+            remote_agent_addresses=friend_agent_urls
         )
         print("HostAgent initialized")
         return hosting_agent_instance.create_agent()

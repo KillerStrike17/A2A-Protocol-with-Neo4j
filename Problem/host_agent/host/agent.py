@@ -25,9 +25,10 @@ from google.adk.sessions import InMemorySessionService
 from google.adk.tools.tool_context import ToolContext
 from google.genai import types
 
-from .badminton_tools import (
-    book_badminton_court,
-    list_court_availabilities,
+from .movie_tools import (
+    confirm_movie_plan,
+    get_movie_plans,
+    cancel_movie_plan,
 )
 from .remote_agent_connection import RemoteAgentConnections
 
@@ -94,38 +95,11 @@ class HostAgent:
             description="This Host agent orchestrates scheduling badminton with friends.",
             tools=[
                 self.send_message,
-                book_badminton_court,
-                list_court_availabilities,
+                confirm_movie_plan,
+                get_movie_plans,
+                cancel_movie_plan,
             ],
         )
-
-    # def root_instruction(self, context: ReadonlyContext) -> str:
-    #     return f"""
-    #     **Role:** You are the Host Agent, an expert scheduler for badminton games. Your primary function is to coordinate with friend agents to find a suitable time to play and then book a court.
-
-    #     **Core Directives:**
-
-    #     *   **Initiate Planning:** When asked to schedule a game, first determine who to invite and the desired date range from the user.
-    #     *   **Task Delegation:** Use the `send_message` tool to ask each friend for their availability.
-    #         *   Frame your request clearly (e.g., "Are you available for badminton between 2024-08-01 and 2024-08-03?").
-    #         *   Make sure you pass in the official name of the friend agent for each message request.
-    #     *   **Analyze Responses:** Once you have availability from all friends, analyze the responses to find common timeslots.
-    #     *   **Check Court Availability:** Before proposing times to the user, use the `list_court_availabilities` tool to ensure the court is also free at the common timeslots.
-    #     *   **Propose and Confirm:** Present the common, court-available timeslots to the user for confirmation.
-    #     *   **Book the Court:** After the user confirms a time, use the `book_badminton_court` tool to make the reservation. This tool requires a `start_time` and an `end_time`.
-    #     *   **Transparent Communication:** Relay the final booking confirmation, including the booking ID, to the user. Do not ask for permission before contacting friend agents.
-    #     *   **Tool Reliance:** Strictly rely on available tools to address user requests. Do not generate responses based on assumptions.
-    #     *   **Readability:** Make sure to respond in a concise and easy to read format (bullet points are good).
-    #     *   Each available agent represents a friend. So Bob_Agent represents Bob.
-    #     *   When asked for which friends are available, you should return the names of the available friends (aka the agents that are active).
-    #     *   When get
-
-    #     **Today's Date (YYYY-MM-DD):** {datetime.now().strftime("%Y-%m-%d")}
-
-    #     <Available Agents>
-    #     {self.agents}
-    #     </Available Agents>
-    #     """
 
     def root_instruction(self, context: ReadonlyContext) -> str:
         return f"""
@@ -247,10 +221,10 @@ class HostAgent:
         payload = {
             "message": {
                 "role": "user",
-                "parts": [{"type": "text", "text": task}],
-                "messageId": message_id,
-                "taskId": task_id,
-                "contextId": context_id,
+                "parts": # TODO
+                "messageId": # TODO,
+                "taskId": # TODO,
+                "contextId": # TODO,
             },
         }
 
@@ -283,8 +257,7 @@ def _get_initialized_host_agent_sync():
     async def _async_main():
         # Hardcoded URLs for the friend agents
         friend_agent_urls = [
-            "http://localhost:10005",  # Movie's Agent
-            "http://localhost:10006",  # Sushmita's Agent
+           # TODO
         ]
 
         print("initializing host agent")
