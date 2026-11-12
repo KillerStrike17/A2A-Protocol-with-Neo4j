@@ -1,283 +1,72 @@
-import asyncio
-import json
-import uuid
 from datetime import datetime
-from typing import Any, AsyncIterable, List
 
-import httpx
-import nest_asyncio
-from a2a.client import A2ACardResolver
-from a2a.types import (
-    AgentCard,
-    MessageSendParams,
-    SendMessageRequest,
-    SendMessageResponse,
-    SendMessageSuccessResponse,
-    Task,
-)
 from dotenv import load_dotenv
-from google.adk import Agent
+from google.adk.a2a.agent import RemoteA2aAgent
+from google.adk.agents import LlmAgent
 from google.adk.agents.readonly_context import ReadonlyContext
-from google.adk.artifacts import InMemoryArtifactService
-from google.adk.memory.in_memory_memory_service import InMemoryMemoryService
-from google.adk.runners import Runner
-from google.adk.sessions import InMemorySessionService
-from google.adk.tools.tool_context import ToolContext
-from google.genai import types
+from google.adk.tools.agent_tool import AgentTool
 
-from .movie_tools import (
-    confirm_movie_plan,
-    get_movie_plans,
-    cancel_movie_plan,
-)
-from .remote_agent_connection import RemoteAgentConnections
+from .movie_tools import cancel_movie_plan, confirm_movie_plan, get_movie_plans
 
 load_dotenv()
-nest_asyncio.apply()
+
+MODEL = "gemini-3.8-flash"
+
+# Remote agents, reached over the A2A protocol. RemoteA2aAgent downloads each
+# Agent Card the first time the agent is called, so the order you start the
+# servers in doesn't matter.
+movie_agent = RemoteA2aAgent(
+    name="Movie_Agent",
+    description="Recommends movies by genre, actor, director, year or keyword from a Neo4j movie graph.",
+    agent_card="",  # TODO (Step 10): URL of the Movie Agent's Agent Card
+    use_legacy=False,  # the Movie Agent is an ADK to_a2a() server, so use ADK's newer A2A integration
+)
+
+friend_agent = RemoteA2aAgent(
+    name="Friend_Agent",
+    description="Knows the friend's availability, favorite movie genres and the movies they have already watched.",
+    agent_card="",  # TODO (Step 10): URL of the Friend Agent's Agent Card
+)
 
 
-class HostAgent:
-    """The Host agent."""
+def root_instruction(context: ReadonlyContext) -> str:
+    return f"""
+    **Role:** You are the Host Agent, an expert coordinator for movie recommendations and scheduling.
+    Your job is to work with the `Movie_Agent` and the `Friend_Agent` to find a movie you and your
+    friend can watch together, and a time to watch it.
 
-    def __init__(
-        self,
-    ):
-        self.remote_agent_connections: dict[str, RemoteAgentConnections] = {}
-        self.cards: dict[str, AgentCard] = {}
-        self.agents: str = ""
-        self._agent = self.create_agent()
-        self._user_id = "host_agent"
-        self._runner = Runner(
-            app_name=self._agent.name,
-            agent=self._agent,
-            artifact_service=InMemoryArtifactService(),
-            session_service=InMemorySessionService(),
-            memory_service=InMemoryMemoryService(),
-        )
+    **Workflow for planning a movie:**
+    1. Ask the `Friend_Agent`: "What genres of movies do you like and what movies have you already watched?"
+       Only if the user explicitly asks about availability, scheduling or finding a time, ask instead:
+       "Are you available to watch a movie this week? What are your favorite genres and what movies have you already watched?"
+    2. Ask the `Movie_Agent` for recommendations in the friend's favorite genres,
+       e.g. "Recommend 10 top-rated Comedy movies".
+    3. Remove any recommended movie that appears in the friend's watched list.
+    4. Present the remaining recommendations as bullet points with a short reason for each.
+       If availability was checked, suggest matching time slots too.
+    5. When the user picks a movie (and a time), save it with `confirm_movie_plan`
+       (movie_title, date as YYYY-MM-DD, time as HH:MM) and reply with the plan ID.
 
-    async def _async_init_components(self, remote_agent_addresses: List[str]):
-        async with httpx.AsyncClient(timeout=30) as client:
-            for address in remote_agent_addresses:
-                card_resolver = A2ACardResolver(client, address)
-                try:
-                    card = await card_resolver.get_agent_card()
-                    remote_connection = RemoteAgentConnections(
-                        agent_card=card, agent_url=address
-                    )
-                    self.remote_agent_connections[card.name] = remote_connection
-                    self.cards[card.name] = card
-                except httpx.ConnectError as e:
-                    print(f"ERROR: Failed to get agent card from {address}: {e}")
-                except Exception as e:
-                    print(f"ERROR: Failed to initialize connection for {address}: {e}")
+    **Other tools:** use `get_movie_plans` to list saved plans and `cancel_movie_plan` to cancel one.
 
-        agent_info = [
-            json.dumps({"name": card.name, "description": card.description})
-            for card in self.cards.values()
-        ]
-        print("agent_info:", agent_info)
-        self.agents = "\n".join(agent_info) if agent_info else "No friends found"
+    **Rules:**
+    *   Contact the agents yourself; don't ask the user for permission first.
+    *   Only rely on what the tools and agents return; never make up movies or times.
+    *   Keep answers concise and easy to read.
 
-    @classmethod
-    async def create(
-        cls,
-        remote_agent_addresses: List[str],
-    ):
-        instance = cls()
-        await instance._async_init_components(remote_agent_addresses)
-        return instance
-
-    def create_agent(self) -> Agent:
-        return Agent(
-            model="gemini-2.0-flash",
-            name="Host_Agent",
-            instruction=self.root_instruction,
-            description="This Host agent orchestrates scheduling badminton with friends.",
-            tools=[
-                self.send_message,
-                confirm_movie_plan,
-                get_movie_plans,
-                cancel_movie_plan,
-            ],
-        )
-
-    def root_instruction(self, context: ReadonlyContext) -> str:
-        return f"""
-        **Role:** You are the Host Agent, an expert coordinator for movie recommendations and scheduling. Your primary function is to coordinate with the Movie Agent and Sushmita Agent to find a suitable movie and time to watch together.
-
-        **Core Directives:**
-
-        *   **Initiate Planning:** When asked to recommend a movie or plan a movie watching session, follow this workflow:
-            1. First, ask the "Sushmita Agent" for:
-               - Their favorite movie genres
-               - The list of movies they've already watched
-               - Their availability (ONLY if the user explicitly asks to check availability, schedule, or find a time)
-            2. Then, ask the "Movie Agent" for movie recommendations based on Sushmita's genre preferences
-            3. Filter out any movies from the recommendations that Sushmita has already watched
-            4. Present the filtered movie recommendations
-            5. If availability was checked, also present available time slots and match them with recommendations
-            6. Help the user select a movie (and time if availability was checked), then confirm the plan
-
-        *   **Task Delegation:** Use the `send_message` tool to communicate with agents.
-            *   For Sushmita Agent:
-              - ALWAYS ask: "What genres of movies do you like and what movies have you already watched?"
-              - ONLY ask about availability if the user explicitly mentions checking availability, scheduling, or finding a time (e.g., "check her availability", "when is she free", "schedule a movie")
-              - If availability is needed, ask: "Are you available to watch a movie this week? What are your favorite genres and what movies have you already watched?"
-              - If availability is NOT needed, just ask: "What genres of movies do you like and what movies have you already watched?"
-            *   For Movie Agent, ask questions like:
-              - "Recommend some [genre] movies" (use genres from Sushmita's preferences)
-              - "What are some good [genre] movies?"
-            *   Make sure you pass in the official agent name: "Sushmita Agent" or "Movie Agent"
-
-        *   **Analyze and Filter:** 
-            *   Extract their favorite genres and watched movies list from Sushmita Agent's response
-            *   If availability was requested, extract Sushmita's availability times from their response
-            *   Get movie recommendations from Movie Agent based on the genres
-            *   Remove any recommended movies that appear in Sushmita's watched movies list
-            *   If availability was checked, match available times with movie recommendations
-
-        *   **Present Options:** 
-            *   Format your response clearly with:
-              - Recommended movies (filtered to exclude watched ones) with brief descriptions
-              - If availability was checked, include available time slots and match them with recommendations
-              - A clear recommendation (with time if availability was checked)
-            *   Use bullet points for readability
-
-        *   **Finalize Plan:**
-            *   Once the user selects a movie and time, use the `confirm_movie_plan` tool to save the plan
-            *   The tool requires: movie_title, date (YYYY-MM-DD), time (HH:MM), and optionally participants
-            *   After confirming, provide a clear summary with the plan ID
-            *   You can also use `get_movie_plans` to retrieve existing plans if the user asks
-            *   Use `cancel_movie_plan` if the user wants to cancel an existing plan
-
-        *   **Transparent Communication:** Do not ask for permission before contacting agents. Proceed with gathering information automatically.
-        *   **Tool Reliance:** Strictly rely on available tools to address user requests. Do not generate responses based on assumptions.
-        *   **Readability:** Make sure to respond in a concise and easy to read format (bullet points are good).
-
-        **Today's Date (YYYY-MM-DD):** {datetime.now().strftime("%Y-%m-%d")}
-
-        <Available Agents>
-        {self.agents}
-        </Available Agents>
-        """
-
-    async def stream(
-        self, query: str, session_id: str
-    ) -> AsyncIterable[dict[str, Any]]:
-        """
-        Streams the agent's response to a given query.
-        """
-        session = await self._runner.session_service.get_session(
-            app_name=self._agent.name,
-            user_id=self._user_id,
-            session_id=session_id,
-        )
-        content = types.Content(role="user", parts=[types.Part.from_text(text=query)])
-        if session is None:
-            session = await self._runner.session_service.create_session(
-                app_name=self._agent.name,
-                user_id=self._user_id,
-                state={},
-                session_id=session_id,
-            )
-        async for event in self._runner.run_async(
-            user_id=self._user_id, session_id=session.id, new_message=content
-        ):
-            if event.is_final_response():
-                response = ""
-                if (
-                    event.content
-                    and event.content.parts
-                    and event.content.parts[0].text
-                ):
-                    response = "\n".join(
-                        [p.text for p in event.content.parts if p.text]
-                    )
-                yield {
-                    "is_task_complete": True,
-                    "content": response,
-                }
-            else:
-                yield {
-                    "is_task_complete": False,
-                    "updates": "The host agent is thinking...",
-                }
-
-    async def send_message(self, agent_name: str, task: str, tool_context: ToolContext):
-        """Sends a task to a remote friend agent."""
-        if agent_name not in self.remote_agent_connections:
-            raise ValueError(f"Agent {agent_name} not found")
-        client = self.remote_agent_connections[agent_name]
-
-        if not client:
-            raise ValueError(f"Client not available for {agent_name}")
-
-        # Simplified task and context ID management
-        state = tool_context.state
-        task_id = state.get("task_id", str(uuid.uuid4()))
-        context_id = state.get("context_id", str(uuid.uuid4()))
-        message_id = str(uuid.uuid4())
-
-        payload = {
-            "message": {
-                "role": "user",
-                "parts": # TODO
-                "messageId": # TODO,
-                "taskId": # TODO,
-                "contextId": # TODO,
-            },
-        }
-
-        message_request = SendMessageRequest(
-            id=message_id, params=MessageSendParams.model_validate(payload)
-        )
-        send_response: SendMessageResponse = await client.send_message(message_request)
-        print("send_response", send_response)
-
-        if not isinstance(
-            send_response.root, SendMessageSuccessResponse
-        ) or not isinstance(send_response.root.result, Task):
-            print("Received a non-success or non-task response. Cannot proceed.")
-            return
-
-        response_content = send_response.root.model_dump_json(exclude_none=True)
-        json_content = json.loads(response_content)
-
-        resp = []
-        if json_content.get("result", {}).get("artifacts"):
-            for artifact in json_content["result"]["artifacts"]:
-                if artifact.get("parts"):
-                    resp.extend(artifact["parts"])
-        return resp
+    **Today's date (YYYY-MM-DD):** {datetime.now().strftime("%Y-%m-%d")}
+    """
 
 
-def _get_initialized_host_agent_sync():
-    """Synchronously creates and initializes the HostAgent."""
-
-    async def _async_main():
-        # Hardcoded URLs for the friend agents
-        friend_agent_urls = [
-           # TODO
-        ]
-
-        print("initializing host agent")
-        hosting_agent_instance = await HostAgent.create(
-            remote_agent_addresses=friend_agent_urls
-        )
-        print("HostAgent initialized")
-        return hosting_agent_instance.create_agent()
-
-    try:
-        return asyncio.run(_async_main())
-    except RuntimeError as e:
-        if "asyncio.run() cannot be called from a running event loop" in str(e):
-            print(
-                f"Warning: Could not initialize HostAgent with asyncio.run(): {e}. "
-                "This can happen if an event loop is already running (e.g., in Jupyter). "
-                "Consider initializing HostAgent within an async function in your application."
-            )
-        else:
-            raise
-
-
-root_agent = _get_initialized_host_agent_sync()
+root_agent = LlmAgent(
+    model=MODEL,
+    name="Host_Agent",
+    description="Coordinates the Movie Agent and the Friend Agent to recommend and schedule a movie.",
+    instruction=root_instruction,
+    tools=[
+        # TODO (Step 10): give the host the two remote agents as tools (AgentTool)
+        confirm_movie_plan,
+        get_movie_plans,
+        cancel_movie_plan,
+    ],
+)

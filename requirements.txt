@@ -1,13 +1,8 @@
-google-adk>=1.2.1
-a2a-sdk>=0.2.5
-nest-asyncio>=1.6.0
-python-dotenv
-click
-uvicorn
-google-generativeai
-httpx
-crewai[tools]>=0.126.0
-pydantic
-uvicorn
-google-generativeai
-neo4j
+# Requires Python 3.11 - 3.13 (google-adk needs >= 3.11, crewai needs < 3.14)
+google-adk[a2a]>=2.14,<3      # Agent Development Kit + A2A support (pulls in a2a-sdk[http-server] 1.x)
+a2a-sdk[http-server]>=1.3,<2  # Agent2Agent protocol SDK (servers, clients, types)
+crewai>=1.15,<2               # Friend Agent framework (uses the Gemini SDK installed by google-adk)
+neo4j>=6.4,<7                 # Neo4j Python driver
+python-dotenv>=1,<2
+uvicorn>=0.34,<1
+uv>=0.5                       # provides uvx, which launches the Neo4j MCP server

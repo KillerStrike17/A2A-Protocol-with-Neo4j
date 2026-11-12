@@ -1,13 +1,13 @@
-from datetime import date, datetime
-from typing import Dict, List
+from datetime import datetime
+from typing import Dict, Optional
 from uuid import uuid4
 
 # In-memory database for movie watching plans
-MOVIE_PLANS: Dict[str, dict] = {}
+MOVIE_PLANS: Dict[str, Dict[str, str]] = {}
 
 
 def confirm_movie_plan(
-    movie_title: str, date: str, time: str, participants: str = "Sushmita"
+    movie_title: str, date: str, time: str, participants: str = "Friend"
 ) -> dict:
     """
     Confirms and saves a movie watching plan.
@@ -16,7 +16,7 @@ def confirm_movie_plan(
         movie_title: The title of the movie to watch.
         date: The date to watch the movie, in YYYY-MM-DD format.
         time: The time to watch the movie, in HH:MM format.
-        participants: The participants for the movie watching (default: "Sushmita").
+        participants: The participants for the movie watching (default: "Friend").
 
     Returns:
         A dictionary confirming the plan or providing an error.
@@ -56,7 +56,7 @@ def confirm_movie_plan(
     }
 
 
-def get_movie_plans(date_filter: str = None) -> dict:
+def get_movie_plans(date_filter: Optional[str] = None) -> dict:
     """
     Retrieves movie watching plans, optionally filtered by date.
 

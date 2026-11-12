@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import datetime
 from typing import Dict, Optional
 from uuid import uuid4
 
@@ -6,17 +6,8 @@ from uuid import uuid4
 MOVIE_PLANS: Dict[str, Dict[str, str]] = {}
 
 
-def _initialize_movie_plans():
-    """Initialize the movie plans database (placeholder for future initialization)."""
-    pass
-
-
-# Initialize when module is loaded
-_initialize_movie_plans()
-
-
 def confirm_movie_plan(
-    movie_title: str, date: str, time: str, participants: str = "Sushmita"
+    movie_title: str, date: str, time: str, participants: str = "Friend"
 ) -> dict:
     """
     Confirms and saves a movie watching plan.
@@ -25,7 +16,7 @@ def confirm_movie_plan(
         movie_title: The title of the movie to watch.
         date: The date to watch the movie, in YYYY-MM-DD format.
         time: The time to watch the movie, in HH:MM format.
-        participants: The participants for the movie watching (default: "Sushmita").
+        participants: The participants for the movie watching (default: "Friend").
 
     Returns:
         A dictionary confirming the plan or providing an error.

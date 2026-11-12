@@ -2,95 +2,68 @@ import logging
 import os
 
 import uvicorn
-from a2a.server.apps import A2AStarletteApplication
-from a2a.server.request_handlers import DefaultRequestHandler
-from a2a.server.tasks import InMemoryTaskStore
 from a2a.types import (
     AgentCapabilities,
     AgentCard,
+    AgentInterface,
     AgentSkill,
 )
 from agent import create_agent
-from agent_executor import MovieAgentExecutor
 from dotenv import load_dotenv
-from google.adk.artifacts import InMemoryArtifactService
-from google.adk.memory.in_memory_memory_service import InMemoryMemoryService
-from google.adk.runners import Runner
-from google.adk.sessions import InMemorySessionService
+from google.adk.a2a.utils.agent_to_a2a import to_a2a
 
 load_dotenv()
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-
-class MissingAPIKeyError(Exception):
-    """Exception for missing API key."""
-
-    pass
+HOST = "localhost"
+PORT = 10005
 
 
 def main():
-    """Starts the agent server."""
-    host = "localhost"
-    port = 10005
-    try:
-        # Check for API key only if Vertex AI is not configured
-        if not os.getenv("GOOGLE_GENAI_USE_VERTEXAI") == "TRUE":
-            if not os.getenv("GOOGLE_API_KEY"):
-                raise MissingAPIKeyError(
-                    "GOOGLE_API_KEY environment variable not set and GOOGLE_GENAI_USE_VERTEXAI is not TRUE."
-                )
+    """Starts the Movie Agent as an A2A server."""
+    if os.getenv("GOOGLE_GENAI_USE_VERTEXAI", "").upper() != "TRUE" and not os.getenv(
+        "GOOGLE_API_KEY"
+    ):
+        logger.error(
+            "GOOGLE_API_KEY is not set and GOOGLE_GENAI_USE_VERTEXAI is not TRUE."
+        )
+        raise SystemExit(1)
 
-        capabilities = AgentCapabilities(streaming=True)
-        skill = AgentSkill(
-            id="movie_recommendations",
-            name="Movie Recommendations",
-            description="Recommends movies based on genre, actor, director, year, or keywords using Neo4j database.",
-            tags=["movies", "recommendations", "entertainment"],
-            examples=[
-                "Recommend some action movies",
-                "What movies has Tom Hanks acted in?",
-                "Show me movies from 1999",
-                "Find movies about space",
-            ],
-        )
-        agent_card = AgentCard(
-            name="Movie Agent",
-            description="An intelligent movie recommendation agent that helps you discover movies based on your preferences using Neo4j database.",
-            url=f"http://{host}:{port}/",
-            version="1.0.0",
-            defaultInputModes=["text/plain"],
-            defaultOutputModes=["text/plain"],
-            capabilities=capabilities,
-            skills=[skill],
-        )
+    skill = AgentSkill(
+        id="movie_recommendations",
+        name="Movie Recommendations",
+        description="Recommends movies based on genre, actor, director, year, or keywords using a Neo4j movie graph.",
+        tags=["movies", "recommendations", "entertainment"],
+        examples=[
+            "Recommend some action movies",
+            "What movies has Tom Hanks acted in?",
+            "Show me movies from 1999",
+            "Find movies about space",
+        ],
+    )
+    agent_card = AgentCard(
+        name="Movie Agent",
+        description="An intelligent movie recommendation agent that helps you discover movies based on your preferences using a Neo4j database.",
+        version="1.0.0",
+        supported_interfaces=[
+            AgentInterface(
+                url=f"http://{HOST}:{PORT}/",
+                protocol_binding="JSONRPC",
+                protocol_version="1.0",
+            )
+        ],
+        default_input_modes=["text/plain"],
+        default_output_modes=["text/plain"],
+        capabilities=AgentCapabilities(streaming=True),
+        skills=[skill],
+    )
 
-        adk_agent = create_agent()
-        runner = Runner(
-            app_name=agent_card.name,
-            agent=adk_agent,
-            artifact_service=InMemoryArtifactService(),
-            session_service=InMemorySessionService(),
-            memory_service=InMemoryMemoryService(),
-        )
-        agent_executor = MovieAgentExecutor(runner)
-
-        request_handler = DefaultRequestHandler(
-            agent_executor=agent_executor,
-            task_store=InMemoryTaskStore(),
-        )
-        server = A2AStarletteApplication(
-            agent_card=agent_card, http_handler=request_handler
-        )
-
-        uvicorn.run(server.build(), host=host, port=port)
-    except MissingAPIKeyError as e:
-        logger.error(f"Error: {e}")
-        exit(1)
-    except Exception as e:
-        logger.error(f"An error occurred during server startup: {e}")
-        exit(1)
+    # to_a2a wraps the ADK agent in an A2A server: it serves the Agent Card at
+    # /.well-known/agent-card.json and handles JSON-RPC requests at /.
+    app = to_a2a(create_agent(), host=HOST, port=PORT, agent_card=agent_card)
+    uvicorn.run(app, host=HOST, port=PORT)
 
 
 if __name__ == "__main__":

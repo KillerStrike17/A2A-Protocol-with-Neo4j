@@ -3,6 +3,10 @@ import random
 from datetime import date, datetime, timedelta
 from typing import Type
 
+# Turn off CrewAI's interactive "share execution trace?" prompt, which would
+# otherwise pause every request for 20 seconds when running as a server.
+os.environ.setdefault("CREWAI_TRACING_ENABLED", "false")
+
 from crewai import LLM, Agent, Crew, Process, Task
 from crewai.tools import BaseTool
 from dotenv import load_dotenv
@@ -22,7 +26,7 @@ def generate_calendar() -> dict[str, list[str]]:
         date_str = current_date.strftime("%Y-%m-%d")
         available_slots = sorted(random.sample(possible_times, 8))
         calendar[date_str] = available_slots
-    print("---- Sushmita's Generated Calendar ----")
+    print("---- Friend's Generated Calendar ----")
     print(calendar)
     print("---------------------------------")
     return calendar
@@ -159,57 +163,36 @@ class SchedulingAgent:
         """Initializes the SchedulingAgent."""
         if os.getenv("GOOGLE_API_KEY"):
             self.llm = LLM(
-                model="gemini/gemini-2.0-flash",
-                api_key=os.getenv("GOOGLE_API_KEY"),
+                model="",  # TODO (Step 9)
+                api_key="",  # TODO (Step 9)
             )
         else:
             raise ValueError("GOOGLE_API_KEY environment variable not set.")
 
         self.scheduling_assistant = Agent(
-            role="Personal Assistant for Scheduling and Movie Preferences",
-            goal=(
-                "Check my calendar for availability and provide information about "
-                "my movie genre preferences and watched movies list."
-            ),
-            backstory=(
-                "You are a highly efficient and polite assistant. You have two main responsibilities: "
-                "1) Manage my calendar and answer questions about my availability using the "
-                "Calendar Availability Checker tool. "
-                "2) Provide information about my movie preferences - specifically my favorite genres "
-                "and the list of movies I've already watched using the Movie Preferences Manager tool. "
-                "When asked about movie watching availability, check my calendar first, then provide "
-                "my movie genre preferences. Always be helpful and concise."
-            ),
+            role="",  # TODO (Step 9)
+            goal="",  # TODO (Step 9)
+            backstory="",  # TODO (Step 9)
             verbose=True,
             allow_delegation=False,
-            tools=[AvailabilityTool(), MoviePreferencesTool()],
-            llm=self.llm,
+            tools=[],  # TODO (Step 9)
+            llm=None,  # TODO (Step 9)
         )
 
     def invoke(self, question: str) -> str:
         """Kicks off the crew to answer questions about availability or movie preferences."""
-        task_description = (
-            f"Answer the user's question. The user asked: '{question}'. "
-            f"Today's date is {date.today().strftime('%Y-%m-%d')}. "
-            f"If the question is about availability, use the Calendar Availability Checker tool. "
-            f"If the question is about movie preferences, genres, or watched movies, use the Movie Preferences Manager tool. "
-            f"If the question is about watching movies, check both availability and movie preferences."
-        )
+        # TODO (Step 9): describe the task, including the question and today's date.
+        task_description = ""
 
         check_availability_task = Task(
             description=task_description,
-            expected_output=(
-                "A polite and concise answer to the user's question. "
-                "If about availability, provide calendar information. "
-                "If about movies, provide genre preferences and/or watched movies list. "
-                "If about watching movies together, provide both availability and movie preferences."
-            ),
+            expected_output="",  # TODO (Step 9)
             agent=self.scheduling_assistant,
         )
 
         crew = Crew(
-            agents=[self.scheduling_assistant],
-            tasks=[check_availability_task],
+            agents=[],  # TODO (Step 9)
+            tasks=[],  # TODO (Step 9)
             process=Process.sequential,
             verbose=True,
         )
